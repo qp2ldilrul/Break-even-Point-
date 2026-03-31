@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC 公司 經營管理看板 </title>
+    <title>ABC 公司 經營管理看板 (支援 Excel 上傳連動版)</title>
+    <!-- 引入 SheetJS 用於解析 Excel -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --a-color: #1e40af; --b-color: #6d28d9; --c-color: #be185d; --bg: #f8fafc; }
@@ -26,10 +27,24 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #f8fafc; padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0; font-size: 0.85rem; }
         td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
-        .editable-input { border: 1px solid transparent; background: transparent; width: 110px; padding: 4px 8px; font-family: inherit; font-size: 14px; text-align: right; border-radius: 4px; transition: 0.2s; }
+
+        /* 新增：可編輯輸入框樣式 */
+        .editable-input {
+            border: 1px solid transparent;
+            background: transparent;
+            width: 110px;
+            padding: 4px 8px;
+            font-family: inherit;
+            font-size: 14px;
+            text-align: right;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
         .editable-input:hover { border: 1px solid #cbd5e1; background: #fff; }
         .editable-input:focus { border: 1px solid var(--a-color); background: #fff; outline: none; box-shadow: 0 0 0 2px rgba(30,64,175,0.1); }
+        /* 移除 number 欄位的箭頭 */
         .editable-input::-webkit-inner-spin-button, .editable-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
         .subtotal-row { background: #f1f5f9; font-weight: bold; }
         .grand-total-row { background: #e2e8f0; font-weight: bold; border-top: 2px solid #334155; font-size: 1rem; }
         .section-head { background: #334155; color: white; font-weight: bold; padding: 8px 10px; }
@@ -38,6 +53,18 @@
         .tag-var { background: #dcfce7; color: #166534; }
         .tag-excluded { background: #e2e8f0; color: #64748b; border: 1px dashed #94a3b8; }
         .scroll-area { max-height: 700px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 5px; }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .btn, .tab-group, input[type="file"], input[type="range"] { display: none !important; }
+            .editable-input { border: none !important; padding: 0 !important; background: transparent !important; }
+            .header { background: #0f172a !important; color: white !important; border-radius: 0; }
+            .container { max-width: 100%; margin: 0; }
+            .main-grid { display: block; }
+            .card { box-shadow: none; border: 1px solid #eee; margin-bottom: 20px; }
+            .scroll-area { max-height: none; overflow: visible; border: none; }
+            .metric-box { border: 2px solid #334155; }
+        }
     </style>
 </head>
 <body>
@@ -46,7 +73,7 @@
     <div class="header">
         <div>
             <h2 style="margin:0">ABC 公司 經營管理即時看板</h2>
-            <p style="margin:5px 0 0 0; opacity:0.8;">重整 F5 即可恢復原始預設值</p>
+            <p style="margin:5px 0 0 0; opacity:0.8;">損益平衡關鍵數據：固定費用 / (毛利率 - 獎金率)</p>
         </div>
         <div class="toolbar">
             <input type="file" id="excelUpload" style="display:none;" accept=".xlsx, .xls" onchange="handleFileUpload(event)">
@@ -57,9 +84,9 @@
     </div>
 
     <div class="tab-group">
-        <button class="tab active" data-center="A" onclick="changeCenter('A')">A 中心</button>
-        <button class="tab" data-center="B" onclick="changeCenter('B')">B 中心</button>
-        <button class="tab" data-center="C" onclick="changeCenter('C')">C 中心</button>
+        <button class="tab active" data-center="A" onclick="changeCenter('A')">A 中心 (C欄)</button>
+        <button class="tab" data-center="B" onclick="changeCenter('B')">B 中心 (E欄)</button>
+        <button class="tab" data-center="C" onclick="changeCenter('C')">C 中心 (G欄)</button>
     </div>
 
     <div class="main-grid">
@@ -74,8 +101,15 @@
             <div style="text-align:right"><span id="bonusVal">0</span>%</div>
 
             <div class="metric-box">
-                <small>單月份損益平衡點</small>
+                <small>單月份損益平衡點 (目標營收)</small>
                 <div class="bep-value" id="bepResult">$0</div>
+            </div>
+
+            <div id="dataStatus" style="margin-top:20px; font-size:0.85rem; color:#475569; background:#fefce8; padding:15px; border-radius:5px; line-height:1.8;">
+                <b>📊 數據狀態說明：</b><br>
+                1. 點擊表格內的<b>金額</b>即可直接修改數字。<br>
+                2. 修改後會自動保存，重新整理網頁也會保留。<br>
+                3. 上傳 Excel 檔案會覆蓋目前的數據。
             </div>
         </aside>
 
@@ -85,8 +119,8 @@
                 <table id="fullTable">
                     <thead>
                         <tr>
-                            <th>科目名稱</th>
-                            <th style="text-align:right">每月預估額</th>
+                            <th>科目名稱 (對應 Excel 欄位)</th>
+                            <th style="text-align:right">每月預估額 (可修改)</th>
                             <th style="text-align:center">性質分類</th>
                         </tr>
                     </thead>
@@ -99,16 +133,59 @@
 </div>
 
 <script>
-// 這裡保留原始設定值
-const centerData = {
-    A: { mBase: 41.43, bBase: 0, costs: [["電話費 (C25)", 32000, "固定", true], ["F成本 (C26)", 750000, "固定", true], ["S成本 (C27)", 1000000, "固定", true], ["廣播監測資料測試 (C28)", 31500, "固定", true], ["製作費-配音員 (C29)", 200000, "固定", true], ["M成本 (C30)", 362000, "固定", true], ["NASH (C31)", 7500, "固定", true], ["F+C RCS (C32)", 47000, "固定", true], ["F 音樂版權 (C33)", 355000, "固定", true], ["公司用版權 (C34)", 13333, "固定", true], ["稿費 (C36)", 150000, "變動", true], ["F+C 硬體 (C37)", 50000, "變動", true]], expenses: [["薪資 (C42)", 1000000, "固定"], ["勞健退休金 (C43)", 330000, "固定"], ["年終提撥 (C44)", 200000, "固定"], ["董監事車馬費 (C45)", 35000, "固定"], ["租金 (C46)", 365000, "固定"], ["電話及網路 (C47)", 16000, "固定"], ["水電費 (C48)", 36000, "固定"], ["裝潢攤提 (C49)", 190000, "固定"], ["勞務費 (C50)", 15000, "固定"], ["廣告費 (C51)", 3000, "固定"], ["辦公室管理費 (C52)", 36000, "固定"], ["什支-固定 (C53)", 12000, "固定"], ["文具用品 (C55)", 4000, "變動"], ["旅費 (C56)", 5000, "變動"], ["運費 (C57)", 3500, "變動"], ["修繕費 (C58)", 2000, "變動"], ["交通費 (C59)", 3000, "變動"], ["稅捐 (C60)", 7500, "變動"], ["職工福利 (C61)", 10000, "變動"], ["旅遊基金 (C62)", 39000, "變動"], ["訓練費 (C63)", 20000, "變動"], ["交際費 (C64)", 40000, "變動"], ["什支-變動 (C65)", 10000, "變動"], ["雜項購置 (C66)", 30000, "變動"]] },
-    B: { mBase: 46.0, bBase: 6.0, costs: [["電話費 (E25)", 0, "固定", false], ["F成本 (E26)", 0, "固定", false]], expenses: [["薪資 (E42)", 475000, "固定"], ["勞健退休金 (E43)", 105000, "固定"]] },
-    C: { mBase: 25.0, bBase: 7.0, costs: [["電話費 (G25)", 0, "固定", false], ["F成本 (G26)", 0, "固定", false]], expenses: [["薪資 (G42)", 255000, "固定"], ["勞健退休金 (G43)", 62000, "固定"]] }
+window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<script>
+let centerData = {
+    A: {
+        mBase: 41.43, bBase: 0, col: 'C',
+        costs: [
+            ["電話費 (C25)", 32000, "固定", true], ["F成本 (C26)", 750000, "固定", true], ["S成本 (C27)", 1000000, "固定", true],
+            ["廣播監測資料測試 (C28)", 31500, "固定", true], ["製作費-配音員 (1-2月均) (C29)", 200000, "固定", true],
+            ["M成本-RCS+音樂版權 (C30)", 362000, "固定", true], ["NASH (C31)", 7500, "固定", true], ["F+C RCS (C32)", 47000, "固定", true],
+            ["F 音樂版權 (C33)", 355000, "固定", true], ["公司用版權 (C34)", 13333, "固定", true], ["稿費 (C36)", 150000, "變動", true], ["F+C 硬體+軟體+其他 (C37)", 50000, "變動", true]
+        ],
+        expenses: [
+            ["薪資 (含簽約、交通) (C42)", 1000000, "固定"], ["勞健退休金 (C43)", 330000, "固定"], ["年終提撥 (C44)", 200000, "固定"],
+            ["董監事車馬費 (C45)", 35000, "固定"], ["租金-含車位、子公司 (C46)", 365000, "固定"], ["電話及網路 (C47)", 16000, "固定"],
+            ["水電費-公司報支 (C48)", 36000, "固定"], ["裝潢攤提-115年攤完 (C49)", 190000, "固定"], ["勞務費 -簽證費 (C50)", 15000, "固定"],
+            ["廣告費-104+公司網頁 (C51)", 3000, "固定"], ["辦公室管理費+清潔費+盆栽 (C52)", 36000, "固定"], ["什支-公司報支-固定 (C53)", 12000, "固定"],
+            ["文具用品-公司報支 (C55)", 4000, "變動"], ["旅費-公司報支 (C56)", 5000, "變動"], ["運費-公司報支 (C57)", 3500, "變動"], ["修繕費 (C58)", 2000, "變動"],
+            ["交通費 (C59)", 3000, "變動"], ["稅捐-(依營收預估) (C60)", 7500, "變動"], ["職工福利-公司報支 (C61)", 10000, "變動"],
+            ["旅遊基金-(提撥) (C62)", 39000, "變動"], ["訓練費 (C63)", 20000, "變動"], ["交際費-公司 (C64)", 40000, "變動"],
+            ["什支-公司報支-變動 (C65)", 10000, "變動"], ["雜項購置-公司報支 (C66)", 30000, "變動"]
+        ]
+    },
+    B: {
+        mBase: 46.0, bBase: 6.0, col: 'E',
+        costs: [["電話費 (E25)", 0, "固定", false], ["F成本 (E26)", 0, "固定", false], ["S成本 (E27)", 0, "固定", false], ["廣播監測資料測試 (E28)", 0, "固定", false], ["製作費-配音員 (E29)", 0, "固定", false], ["M成本-RCS+音樂版權 (E30)", 0, "固定", false], ["NASH (E31)", 0, "固定", false], ["F+C RCS (E32)", 0, "固定", false], ["F 音樂版權 (E33)", 0, "固定", false], ["公司用版權 (E34)", 0, "固定", false], ["稿費 (E36)", 0, "變動", false], ["F+C 硬體+軟體+其他 (E37)", 0, "變動", false]],
+        expenses: [["薪資 (E42)", 475000, "固定"], ["勞健退休金 (E43)", 105000, "固定"], ["年終提撥 (E44)", 77000, "固定"], ["董監事車馬費 (E45)", 14000, "固定"], ["租金 (E46)", 2500, "固定"], ["電話及網路 (E47)", 2000, "固定"], ["水電費 (E48)", 0, "固定"], ["裝潢攤提 (E49)", 0, "固定"], ["勞務費 (E50)", 3500, "固定"], ["廣告費 (E51)", 2500, "固定"], ["辦公室管理費 (E52)", 0, "固定"], ["什支 (E53)", 0, "固定"], ["文具用品 (E55)", 500, "變動"], ["旅費 (E56)", 2000, "變動"], ["運費 (E57)", 1000, "變動"], ["修繕費 (E58)", 1000, "變動"], ["交通費 (E59)", 8000, "變動"], ["稅捐 (E60)", 2500, "變動"], ["職工福利 (E61)", 2000, "變動"], ["旅遊基金 (E62)", 5000, "變動"], ["訓練費 (E63)", 5000, "變動"], ["交際費 (E64)", 15000, "變動"], ["什支 (E65)", 3500, "變動"], ["雜項購置 (E66)", 2000, "變動"]]
+    },
+    C: {
+        mBase: 25.0, bBase: 7.0, col: 'G',
+        costs: [["電話費 (G25)", 0, "固定", false], ["F成本 (G26)", 0, "固定", false], ["S成本 (G27)", 0, "固定", false], ["廣播監測資料測試 (G28)", 0, "固定", false], ["製作費-配音員 (G29)", 0, "固定", false], ["M成本-RCS+音樂版權 (G30)", 0, "固定", false], ["NASH (G31)", 0, "固定", false], ["F+C RCS (G32)", 0, "固定", false], ["F 音樂版權 (G33)", 0, "固定", false], ["公司用版權 (G34)", 0, "固定", false], ["稿費 (G36)", 0, "變動", false], ["F+C 硬體+軟體+其他 (G37)", 0, "變動", false]],
+        expenses: [["薪資 (G42)", 255000, "固定"], ["勞健退休金 (G43)", 62000, "固定"], ["年終提撥 (G44)", 23000, "固定"], ["董監事車馬費 (G45)", 3500, "固定"], ["租金 (G46)", 2300, "固定"], ["電話及網路 (G47)", 0, "固定"], ["水電費 (G48)", 0, "固定"], ["裝潢攤提 (G49)", 0, "固定"], ["勞務費 (G50)", 0, "固定"], ["廣告費 (G51)", 2500, "固定"], ["辦公室管理費 (G52)", 0, "固定"], ["什支 (G53)", 0, "固定"], ["文具用品 (G55)", 500, "變動"], ["旅費 (G56)", 5000, "變動"], ["運費 (G57)", 1000, "變動"], ["修繕費 (G58)", 0, "變動"], ["交通費 (G59)", 1000, "變動"], ["稅捐 (G60)", 11000, "變動"], ["職工福利 (G61)", 0, "變動"], ["旅遊基金 (G62)", 6000, "變動"], ["訓練費 (G63)", 1000, "變動"], ["交際費 (G64)", 4500, "變動"], ["什支 (G65)", 2000, "變動"], ["雜項購置 (G66)", 0, "變動"]]
+    }
 };
 
 let current = 'A';
 
-// 修改金額時，僅更新當前頁面的顯示，不存入 localStorage
+// --- 新增：從本地存檔載入數據 ---
+function loadSavedData() {
+    const saved = localStorage.getItem('ABC_Dashboard_CenterData');
+    if (saved) {
+        centerData = JSON.parse(saved);
+    }
+}
+
+// --- 新增：儲存數據到本地 ---
+function saveToLocal() {
+    localStorage.setItem('ABC_Dashboard_CenterData', JSON.stringify(centerData));
+}
+
+// --- 新增：處理數值修改 ---
 function handleUpdate(type, index, value) {
     const num = parseFloat(value) || 0;
     if (type === 'cost') {
@@ -116,8 +193,9 @@ function handleUpdate(type, index, value) {
     } else {
         centerData[current].expenses[index][1] = num;
     }
-    renderRows();
-    run(); // 即時重新計算左側數字
+    saveToLocal(); // 保存修改
+    renderRows();  // 重新渲染表格(為了更新小計)
+    run();         // 重新計算 BEP
 }
 
 function handleFileUpload(event) {
@@ -127,16 +205,23 @@ function handleFileUpload(event) {
     reader.onload = function(e) {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, {type: 'array'});
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const sheetName = workbook.SheetNames[0]; 
+        const worksheet = workbook.Sheets[sheetName];
         const mapping = { 'A': 'C', 'B': 'E', 'C': 'G' };
         for (let center in mapping) {
             let col = mapping[center];
             centerData[center].costs.forEach((item, index) => {
                 let row = (index < 10) ? (25 + index) : (index === 10 ? 36 : 37);
-                let cell = worksheet[col + row];
-                if (cell) centerData[center].costs[index][1] = parseFloat(cell.v) || 0;
+                let cellAddr = col + row;
+                if (worksheet[cellAddr]) centerData[center].costs[index][1] = parseFloat(worksheet[cellAddr].v) || 0;
+            });
+            centerData[center].expenses.forEach((item, index) => {
+                let rowList = [42,43,44,45,46,47,48,49,50,51,52,53,55,56,57,58,59,60,61,62,63,64,65,66];
+                let cellAddr = col + rowList[index];
+                if (worksheet[cellAddr]) centerData[center].expenses[index][1] = parseFloat(worksheet[cellAddr].v) || 0;
             });
         }
+        saveToLocal(); // 上傳後存檔
         changeCenter(current);
     };
     reader.readAsArrayBuffer(file);
@@ -146,7 +231,8 @@ function changeCenter(id) {
     current = id;
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelector(`.tab[data-center="${id}"]`).classList.add('active');
-    document.getElementById('displayCenter').innerText = `檢視：${id} 中心`;
+    document.getElementById('displayCenter').innerText = `檢視：${id} 中心 (${centerData[id].col} 欄)`;
+    document.getElementById('tableTitle').innerText = `📋 ${id} 中心費用與成本結構 (${centerData[id].col} 欄)`;
     document.getElementById('marginIn').value = centerData[id].mBase;
     document.getElementById('bonusIn').value = centerData[id].bBase;
     renderRows();
@@ -156,41 +242,60 @@ function changeCenter(id) {
 function renderRows() {
     const tbody = document.getElementById('tableBody');
     const data = centerData[current];
-    let html = `<tr class="section-head"><td colspan="3">一、營業成本</td></tr>`;
+    const col = data.col;
+    let html = `<tr class="section-head"><td colspan="3">一、營業成本 (${col}24 - ${col}38)</td></tr>`;
     let costTotal = 0;
+    
     data.costs.forEach((i, idx) => {
         costTotal += i[1];
         const tag = i[3] ? `<span class="cat-tag tag-excluded">已計入毛利</span>` : `<span class="cat-tag ${i[2] === '固定' ? 'tag-fixed' : 'tag-var'}">${i[2]}</span>`;
-        html += `<tr><td>${i[0]}</td><td style="text-align:right">$<input type="number" class="editable-input" value="${i[1]}" onchange="handleUpdate('cost', ${idx}, this.value)"></td><td style="text-align:center">${tag}</td></tr>`;
+        // 修改金額欄位為 input
+        html += `<tr>
+                    <td>${i[0]}</td>
+                    <td style="text-align:right">
+                        $<input type="number" class="editable-input" value="${i[1]}" onchange="handleUpdate('cost', ${idx}, this.value)">
+                    </td>
+                    <td style="text-align:center">${tag}</td>
+                </tr>`;
     });
-    html += `<tr class="subtotal-row"><td>營業成本合計</td><td style="text-align:right">$${costTotal.toLocaleString()}</td><td>-</td></tr>`;
     
+    html += `<tr class="subtotal-row"><td>營業成本合計</td><td style="text-align:right">$${costTotal.toLocaleString()}</td><td>-</td></tr>`;
+    html += `<tr class="section-head"><td colspan="3">二、營業費用 (${col}41 - ${col}67)</td></tr>`;
     let expSub = 0;
-    html += `<tr class="section-head"><td colspan="3">二、營業費用</td></tr>`;
+    
     data.expenses.forEach((i, idx) => {
         expSub += i[1];
-        html += `<tr><td>${i[0]}</td><td style="text-align:right">$<input type="number" class="editable-input" value="${i[1]}" onchange="handleUpdate('exp', ${idx}, this.value)"></td><td style="text-align:center"><span class="cat-tag ${i[2] === '固定' ? 'tag-fixed' : 'tag-var'}">${i[2]}</span></td></tr>`;
+        // 修改金額欄位為 input
+        html += `<tr>
+                    <td>${i[0]}</td>
+                    <td style="text-align:right">
+                        $<input type="number" class="editable-input" value="${i[1]}" onchange="handleUpdate('exp', ${idx}, this.value)">
+                    </td>
+                    <td style="text-align:center"><span class="cat-tag ${i[2] === '固定' ? 'tag-fixed' : 'tag-var'}">${i[2]}</span></td>
+                </tr>`;
     });
+    
+    html += `<tr class="subtotal-row"><td>營業費用合計</td><td style="text-align:right">$${expSub.toLocaleString()}</td><td>-</td></tr>`;
     tbody.innerHTML = html;
-    document.getElementById('tableFoot').innerHTML = `<tr class="grand-total-row"><td>總支出合計</td><td style="text-align:right">$${(costTotal + expSub).toLocaleString()}</td><td>-</td></tr>`;
+    document.getElementById('tableFoot').innerHTML = `<tr class="grand-total-row"><td>當前中心全項開支總計</td><td style="text-align:right">$${(costTotal + expSub).toLocaleString()}</td><td>-</td></tr>`;
 }
 
 function run() {
     const margin = document.getElementById('marginIn').value / 100;
-    const bonus = document.getElementById('bonusIn').value / 100;
+    const bonusRate = document.getElementById('bonusIn').value / 100;
     document.getElementById('marginVal').innerText = document.getElementById('marginIn').value;
     document.getElementById('bonusVal').innerText = document.getElementById('bonusIn').value;
     const data = centerData[current];
-    
     const fixCost = data.costs.filter(i => i[2] === '固定' && !i[3]).reduce((sum, i) => sum + i[1], 0);
     const fixExp = data.expenses.filter(i => i[2] === '固定').reduce((sum, i) => sum + i[1], 0);
     const totalFix = fixCost + fixExp;
-
-    let bep = (margin - bonus) > 0 ? (totalFix / (margin - bonus)) : 0;
-    document.getElementById('bepResult').innerText = bep > 0 ? `$${Math.round(bep).toLocaleString()}` : "無損益平衡點";
+    let denom = margin - bonusRate;
+    let bep = denom > 0 ? (totalFix / denom) : 0;
+    document.getElementById('bepResult').innerText = bep > 0 ? `$${Math.round(bep).toLocaleString()}` : "邊際貢獻不足";
 }
 
-// 頁面開啟時，不讀取暫存，直接載入 A 中心原始預設值
+// 初始化啟動
+loadSavedData();
 changeCenter('A');
 </script>
 
