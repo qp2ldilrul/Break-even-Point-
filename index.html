@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABC 公司 經營管理看板 (支援 Excel 上傳連動版)</title>
-    <!-- 引入 SheetJS 用於解析 Excel -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --a-color: #1e40af; --b-color: #6d28d9; --c-color: #be185d; --bg: #f8fafc; }
@@ -108,8 +107,8 @@
             <div id="dataStatus" style="margin-top:20px; font-size:0.85rem; color:#475569; background:#fefce8; padding:15px; border-radius:5px; line-height:1.8;">
                 <b>📊 數據狀態說明：</b><br>
                 1. 點擊表格內的<b>金額</b>即可直接修改數字。<br>
-                2. 修改後會自動保存，重新整理網頁也會保留。<br>
-                3. 上傳 Excel 檔案會覆蓋目前的數據。
+                2. 本版本不儲存修改，重新整理網頁將恢復初始金額。<br>
+                3. 上傳 Excel 檔案會即時連動目前的數據。
             </div>
         </aside>
 
@@ -172,20 +171,7 @@ let centerData = {
 
 let current = 'A';
 
-// --- 新增：從本地存檔載入數據 ---
-function loadSavedData() {
-    const saved = localStorage.getItem('ABC_Dashboard_CenterData');
-    if (saved) {
-        centerData = JSON.parse(saved);
-    }
-}
-
-// --- 新增：儲存數據到本地 ---
-function saveToLocal() {
-    localStorage.setItem('ABC_Dashboard_CenterData', JSON.stringify(centerData));
-}
-
-// --- 新增：處理數值修改 ---
+// --- 處理數值修改 (移除 saveToLocal) ---
 function handleUpdate(type, index, value) {
     const num = parseFloat(value) || 0;
     if (type === 'cost') {
@@ -193,8 +179,7 @@ function handleUpdate(type, index, value) {
     } else {
         centerData[current].expenses[index][1] = num;
     }
-    saveToLocal(); // 保存修改
-    renderRows();  // 重新渲染表格(為了更新小計)
+    renderRows();  // 重新渲染表格
     run();         // 重新計算 BEP
 }
 
@@ -221,8 +206,7 @@ function handleFileUpload(event) {
                 if (worksheet[cellAddr]) centerData[center].expenses[index][1] = parseFloat(worksheet[cellAddr].v) || 0;
             });
         }
-        saveToLocal(); // 上傳後存檔
-        changeCenter(current);
+        changeCenter(current); // 移除 saveToLocal
     };
     reader.readAsArrayBuffer(file);
 }
@@ -249,7 +233,6 @@ function renderRows() {
     data.costs.forEach((i, idx) => {
         costTotal += i[1];
         const tag = i[3] ? `<span class="cat-tag tag-excluded">已計入毛利</span>` : `<span class="cat-tag ${i[2] === '固定' ? 'tag-fixed' : 'tag-var'}">${i[2]}</span>`;
-        // 修改金額欄位為 input
         html += `<tr>
                     <td>${i[0]}</td>
                     <td style="text-align:right">
@@ -265,7 +248,6 @@ function renderRows() {
     
     data.expenses.forEach((i, idx) => {
         expSub += i[1];
-        // 修改金額欄位為 input
         html += `<tr>
                     <td>${i[0]}</td>
                     <td style="text-align:right">
@@ -294,8 +276,7 @@ function run() {
     document.getElementById('bepResult').innerText = bep > 0 ? `$${Math.round(bep).toLocaleString()}` : "邊際貢獻不足";
 }
 
-// 初始化啟動
-loadSavedData();
+// 移除 loadSavedData 調用，直接啟動
 changeCenter('A');
 </script>
 
